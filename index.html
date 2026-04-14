@@ -1189,11 +1189,7 @@ async function analyzeWithClaude(base64Image, barcode) {
 
     const res = await fetch(CLAUDE_API, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-api-key': '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',
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
+    headers: { 'Content-Type': 'application/json' },
       },
       body: JSON.stringify({ 
         model: 'claude-sonnet-4-20250514', 
