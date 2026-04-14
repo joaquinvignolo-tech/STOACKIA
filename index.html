@@ -1173,10 +1173,22 @@ async function analyzeWithClaude(base64Image, barcode) {
       : `El código de barras es ${barcode}. Devolvé SOLO JSON con: {"nombre": "...", "categoria": "...", "codigo": "${barcode}"}. Intentá identificar el producto por el código. Categoría: Almacén, Bebidas, Lácteos, etc.`;
     content.push({ type: 'text', text: prompt });
 
+    // Get current session token for Edge Function auth
+    const { data: { session } } = await sb.auth.getSession();
+    const authToken = session?.access_token || SUPABASE_KEY;
+    
     const res = await fetch(CLAUDE_API, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'Authorization': `Bearer ${SUPABASE_KEY}` },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 300, messages: [{ role: 'user', content }] })
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+        'apikey': SUPABASE_KEY
+      },
+      body: JSON.stringify({ 
+        model: 'claude-sonnet-4-20250514', 
+        max_tokens: 300, 
+        messages: [{ role: 'user', content }] 
+      })
     });
     const data = await res.json();
     const text = data.content?.[0]?.text || '{}';
