@@ -6,6 +6,7 @@
 <title>StockScan — Sistema de inventario</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
@@ -726,14 +727,36 @@
 
           <div style="text-align:center; color:var(--text3); font-size:12px; margin:10px 0;">— o subí una foto del producto —</div>
 
-          <label for="file-input">
-            <div class="card" style="text-align:center; padding:18px; cursor:pointer; border-style:dashed;">
-              <div style="font-size:22px; margin-bottom:6px;">🖼</div>
-              <div style="font-size:13px; color:var(--text2);">Subir foto para análisis con IA</div>
-              <div style="font-size:11px; color:var(--text3); margin-top:3px;">Claude detecta el producto automáticamente</div>
-            </div>
-          </label>
-          <input type="file" id="file-input" accept="image/*" onchange="handleFileUpload(event)">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <label for="camera-input">
+              <div class="card" style="text-align:center; padding:18px; cursor:pointer; border-style:dashed;">
+                <div style="font-size:22px; margin-bottom:6px;">📸</div>
+                <div style="font-size:13px; color:var(--text2);">Tomar foto</div>
+                <div style="font-size:11px; color:var(--text3); margin-top:3px;">Abre la cámara directo</div>
+              </div>
+            </label>
+            <label for="file-input">
+              <div class="card" style="text-align:center; padding:18px; cursor:pointer; border-style:dashed;">
+                <div style="font-size:22px; margin-bottom:6px;">🖼</div>
+                <div style="font-size:13px; color:var(--text2);">Galería / archivo</div>
+                <div style="font-size:11px; color:var(--text3); margin-top:3px;">Elegir de la galería</div>
+              </div>
+            </label>
+          </div>
+          <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="handleFileUpload(event)" style="display:none">
+          <input type="file" id="file-input" accept="image/*" onchange="handleFileUpload(event)" style="display:none">
+          
+          <!-- Import CSV/Excel -->
+          <div style="margin-top:10px;">
+            <label for="import-input">
+              <div class="card" style="text-align:center; padding:14px; cursor:pointer; border-color:rgba(96,165,250,0.3);">
+                <div style="font-size:16px; margin-bottom:4px;">📥</div>
+                <div style="font-size:13px; color:var(--blue);">Importar base de productos (CSV/Excel)</div>
+                <div style="font-size:11px; color:var(--text3); margin-top:2px;">Cargá todos tus productos de una sola vez</div>
+              </div>
+            </label>
+            <input type="file" id="import-input" accept=".csv,.xlsx,.xls" onchange="handleImport(event)" style="display:none">
+          </div>
         </div>
 
         <div class="analyzing-state" id="analyzing">
@@ -878,6 +901,26 @@
         Admin
       </button>
     </nav>
+  </div>
+
+  <!-- IMPORT MODAL -->
+  <div class="modal-bg" id="modal-import" style="display:none;">
+    <div class="modal" style="max-width:420px;">
+      <h3>Importar productos</h3>
+      <div style="font-size:12px; color:var(--text2); margin-bottom:14px; line-height:1.6;">
+        El archivo debe tener estas columnas (en cualquier orden):<br>
+        <span style="font-family:monospace; color:var(--blue); font-size:11px;">nombre · codigo_barras · categoria · precio · stock</span>
+      </div>
+      <div id="import-preview" style="display:none;">
+        <div style="font-size:11px; color:var(--text2); margin-bottom:6px;" id="import-count"></div>
+        <div style="background:var(--bg3); border-radius:var(--radius); padding:10px; font-size:11px; color:var(--text2); max-height:160px; overflow-y:auto;" id="import-list"></div>
+      </div>
+      <div id="import-error" style="display:none; color:var(--red); font-size:12px; margin-top:8px;"></div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn-secondary" onclick="closeImportModal()">Cancelar</button>
+        <button class="btn-primary" id="btn-do-import" style="margin-top:0; display:none;" onclick="doImport()">Importar productos</button>
+      </div>
+    </div>
   </div>
 
   <!-- LOADING OVERLAY -->
@@ -1470,6 +1513,98 @@ create policy "authenticated can do all on productos" on productos for all using
 create policy "authenticated can do all on movimientos" on movimientos for all using (auth.role() = 'authenticated');
 create policy "authenticated can do all on perfiles" on perfiles for all using (auth.role() = 'authenticated');
 */
+
+// ── IMPORT CSV/EXCEL ──
+let importData = [];
+
+async function handleImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+  
+  try {
+    let rows = [];
+    if (file.name.endsWith('.csv')) {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      const headers = lines[0].split(/[,;\t]/).map(h => h.trim().toLowerCase().replace(/['"]/g,''));
+      for (let i = 1; i < lines.length; i++) {
+        const vals = lines[i].split(/[,;\t]/).map(v => v.trim().replace(/['"]/g,''));
+        const row = {};
+        headers.forEach((h, idx) => row[h] = vals[idx] || '');
+        rows.push(row);
+      }
+    } else {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      rows = rows.map(r => {
+        const norm = {};
+        Object.keys(r).forEach(k => norm[k.toLowerCase().trim()] = String(r[k]).trim());
+        return norm;
+      });
+    }
+
+    // Normalize column names
+    const colMap = { 'nombre':'nombre','name':'nombre','producto':'nombre','descripcion':'nombre','codigo_barras':'codigo_barras','codigo':'codigo_barras','barcode':'codigo_barras','ean':'codigo_barras','cod':'codigo_barras','categoria':'categoria','category':'categoria','rubro':'categoria','precio':'precio','price':'precio','precio_venta':'precio','stock':'stock','cantidad':'stock','qty':'stock','stock_actual':'stock' };
+    
+    importData = rows.map(r => {
+      const norm = {};
+      Object.keys(r).forEach(k => { const mapped = colMap[k.toLowerCase().replace(/ /g,'_')]; if (mapped) norm[mapped] = r[k]; });
+      return { nombre: norm.nombre || '', codigo_barras: norm.codigo_barras || '', categoria: norm.categoria || 'Almacén', precio: parseFloat(norm.precio) || 0, stock_actual: parseInt(norm.stock) || 0 };
+    }).filter(r => r.nombre);
+
+    if (!importData.length) { showImportError('No se encontraron productos válidos. Verificá que el archivo tenga una columna "nombre".'); return; }
+
+    document.getElementById('import-count').textContent = importData.length + ' productos encontrados para importar';
+    document.getElementById('import-list').innerHTML = importData.slice(0,8).map(r => 
+      `<div style="padding:3px 0; border-bottom:0.5px solid var(--border);">${r.nombre} ${r.codigo_barras ? '· '+r.codigo_barras : ''} ${r.precio > 0 ? '· $'+r.precio : ''} ${r.stock_actual > 0 ? '· stock: '+r.stock_actual : ''}</div>`
+    ).join('') + (importData.length > 8 ? `<div style="padding:3px 0; color:var(--text3);">...y ${importData.length-8} más</div>` : '');
+    
+    document.getElementById('import-preview').style.display = 'block';
+    document.getElementById('btn-do-import').style.display = 'block';
+    document.getElementById('import-error').style.display = 'none';
+    document.getElementById('modal-import').style.display = 'flex';
+  } catch(e) {
+    showImportError('Error al leer el archivo: ' + e.message);
+    document.getElementById('modal-import').style.display = 'flex';
+  }
+}
+
+function showImportError(msg) {
+  document.getElementById('import-error').textContent = msg;
+  document.getElementById('import-error').style.display = 'block';
+}
+
+function closeImportModal() {
+  document.getElementById('modal-import').style.display = 'none';
+  importData = [];
+}
+
+async function doImport() {
+  if (!importData.length) return;
+  closeImportModal();
+  showLoading('Importando ' + importData.length + ' productos...');
+  
+  let ok = 0, errors = 0;
+  const batchSize = 20;
+  for (let i = 0; i < importData.length; i += batchSize) {
+    const batch = importData.slice(i, i + batchSize);
+    const { error } = await sb.from('productos').upsert(
+      batch.map(p => ({ nombre: p.nombre, codigo_barras: p.codigo_barras || null, categoria: p.categoria, precio: p.precio, stock_actual: p.stock_actual })),
+      { onConflict: 'codigo_barras', ignoreDuplicates: false }
+    );
+    if (error) errors += batch.length;
+    else ok += batch.length;
+    document.getElementById('loading-text').textContent = `Importando... ${Math.min(i+batchSize, importData.length)}/${importData.length}`;
+  }
+  
+  hideLoading();
+  showToast(`✓ ${ok} productos importados${errors > 0 ? ' · '+errors+' errores' : ''}`, ok > 0 ? 'success' : 'error');
+  loadStock();
+  if (currentRole !== 'empleado') loadResumen();
+}
 
 init();
 </script>
