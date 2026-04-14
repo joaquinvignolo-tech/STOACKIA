@@ -957,7 +957,7 @@
 // ── CONFIG ──
 const SUPABASE_URL = 'https://pcfltlrgruvyktspfmqp.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjZmx0bHJncnV2eWt0c3BmbXFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMDM1NjgsImV4cCI6MjA5MTY3OTU2OH0.URF_IA120c-y_R85HDKCzW_fUUziQ-J4q-mU6PPJGXQ';
-const CLAUDE_API = 'https:///api/claude/v1/messages';
+const CLAUDE_API = '/api/claude';
 
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -1204,9 +1204,9 @@ async function analyzeWithClaude(base64Image, barcode) {
     const data = await res.json();
     const text = data.content?.[0]?.text || '{}';
     const clean = text.replace(/```json|```/g, '').trim();
-const jsonMatch = clean.match(/\{[\s\S]*\}/);
-if (!jsonMatch) return { nombre: '', categoria: 'Almacén', codigo: '' };
-return JSON.parse(jsonMatch[0]);;
+    const jsonMatch = clean.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { nombre: '', categoria: 'Almacén', codigo: '' };
+    return JSON.parse(jsonMatch[0]);
   } catch (e) {
     showToast('Error al analizar con IA. Cargá los datos manualmente.', 'error');
     return { nombre: '', categoria: 'Otro', codigo: barcode || '' };
