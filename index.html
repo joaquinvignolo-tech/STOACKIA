@@ -1204,7 +1204,9 @@ async function analyzeWithClaude(base64Image, barcode) {
     const data = await res.json();
     const text = data.content?.[0]?.text || '{}';
     const clean = text.replace(/```json|```/g, '').trim();
-    return JSON.parse(clean);
+const jsonMatch = clean.match(/\{[\s\S]*\}/);
+if (!jsonMatch) return { nombre: '', categoria: 'Almacén', codigo: '' };
+return JSON.parse(jsonMatch[0]);;
   } catch (e) {
     showToast('Error al analizar con IA. Cargá los datos manualmente.', 'error');
     return { nombre: '', categoria: 'Otro', codigo: barcode || '' };
